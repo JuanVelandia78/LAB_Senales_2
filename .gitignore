@@ -65,6 +65,8 @@ env/
 pc/capturas/
 pc/salidas/
 pc/*.captura.csv
+pc/sensores/capturas/
+pc/sensores/salidas/
 
 # Language Servers
 .clangd/

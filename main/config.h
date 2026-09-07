@@ -1,11 +1,24 @@
 #pragma once
 
-#define FILTER_FIR 0
-#define FILTER_IIR 1
+#define FILT_NONE 0
+#define FILT_CONV 1
+#define FILT_MA   2
+#define FILT_AR   3
+#define FILT_LMS  4
 
-#define BAND_LOWPASS  0
-#define BAND_BANDPASS 1
+#define CONV_FIR 0
+#define CONV_IIR 1
 
-#define FILTER_TYPE FILTER_FIR
-#define FILTER_BAND BAND_LOWPASS
-#define BYPASS      0
+#define FILTER    FILT_NONE
+#define CONV_TYPE CONV_IIR
+
+#define MA_WINDOW 8
+#define AR_ALPHA  0.15f
+#define LMS_TAPS  16
+#define LMS_DELAY 1
+#define LMS_MU    0.02f
+
+#define IMU_SDA 21
+#define IMU_SCL 22
+#define ENC_PIN_A 32
+#define ENC_PIN_B 33

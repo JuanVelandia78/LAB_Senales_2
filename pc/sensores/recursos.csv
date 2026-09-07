@@ -1,0 +1,6 @@
+metodo,tiempo_us,flash_bytes,ram_bytes
+conv_fir,,,
+conv_iir,,,
+media_movil,,,
+autorregresivo,,,
+lms,,,

@@ -1,74 +1,115 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_attr.h"
 #include "driver/gptimer.h"
 #include "driver/gpio.h"
-#include "driver/ledc.h"
-#include "driver/dac_oneshot.h"
-#include "esp_adc/adc_oneshot.h"
 #include "config.h"
-#include "filtros.h"
+#include "filtros_conv.h"
+#include "imu.h"
+#include "encoder.h"
 
-#define FS_HZ     500
-#define TS_US     (1000000 / FS_HZ)
-#define PIN_SCOPE GPIO_NUM_13
-#define PIN_CALC  GPIO_NUM_4
-#define PIN_PWM   GPIO_NUM_27
-#define ADC_CHAN  ADC_CHANNEL_6
-#define DAC_CHAN  DAC_CHAN_0
-#define PWM_FREQ  39000
-
-#if !BYPASS && FILTER_BAND == BAND_BANDPASS
-#define OUT_BIAS 2048
-#else
-#define OUT_BIAS 0
-#endif
+#define FS_HZ    200
+#define TS_US    (1000000 / FS_HZ)
+#define PIN_TICK GPIO_NUM_13
+#define PIN_CALC GPIO_NUM_4
+#define NCH      7
 
 static TaskHandle_t s_task;
 static volatile uint32_t s_t_isr;
 static volatile uint32_t s_overruns;
 static volatile bool s_pending;
-static adc_oneshot_unit_handle_t s_adc;
-static dac_oneshot_handle_t s_dac;
 
-#if BYPASS
-static float filtro(float x)
-{
-    return x;
-}
-#elif FILTER_TYPE == FILTER_FIR
-static float s_z[FILT_NTAPS];
-static int s_head;
+#if FILTER == FILT_CONV && CONV_TYPE == CONV_FIR
+static float st_z[NCH][FILT_NTAPS];
+static int st_head[NCH];
 
-static float filtro(float x)
+static float filtro(int c, float x)
 {
-    s_z[s_head] = x;
+    st_z[c][st_head[c]] = x;
     float acc = 0.0f;
-    int k = s_head;
+    int k = st_head[c];
     for (int i = 0; i < FILT_NTAPS; i++) {
-        acc += FILT_B[i] * s_z[k];
+        acc += FILT_B[i] * st_z[c][k];
         k = k ? (k - 1) : (FILT_NTAPS - 1);
     }
-    s_head = (s_head + 1) % FILT_NTAPS;
+    st_head[c] = (st_head[c] + 1) % FILT_NTAPS;
     return acc;
 }
-#else
-static float s_w1[FILT_NSOS];
-static float s_w2[FILT_NSOS];
+#elif FILTER == FILT_CONV
+static float st_w1[NCH][FILT_NSOS];
+static float st_w2[NCH][FILT_NSOS];
 
-static float filtro(float x)
+static float filtro(int c, float x)
 {
     float y = x;
     for (int s = 0; s < FILT_NSOS; s++) {
-        float w0 = y - FILT_SOS[s][4] * s_w1[s] - FILT_SOS[s][5] * s_w2[s];
-        y = FILT_SOS[s][0] * w0 + FILT_SOS[s][1] * s_w1[s] + FILT_SOS[s][2] * s_w2[s];
-        s_w2[s] = s_w1[s];
-        s_w1[s] = w0;
+        float w0 = y - FILT_SOS[s][4] * st_w1[c][s] - FILT_SOS[s][5] * st_w2[c][s];
+        y = FILT_SOS[s][0] * w0 + FILT_SOS[s][1] * st_w1[c][s] + FILT_SOS[s][2] * st_w2[c][s];
+        st_w2[c][s] = st_w1[c][s];
+        st_w1[c][s] = w0;
     }
     return y;
+}
+#elif FILTER == FILT_MA
+static float st_buf[NCH][MA_WINDOW];
+static int st_head[NCH];
+static float st_acc[NCH];
+
+static float filtro(int c, float x)
+{
+    st_acc[c] += x - st_buf[c][st_head[c]];
+    st_buf[c][st_head[c]] = x;
+    st_head[c] = (st_head[c] + 1) % MA_WINDOW;
+    return st_acc[c] / MA_WINDOW;
+}
+#elif FILTER == FILT_AR
+static float st_y[NCH];
+static bool st_init[NCH];
+
+static float filtro(int c, float x)
+{
+    if (!st_init[c]) {
+        st_y[c] = x;
+        st_init[c] = true;
+    }
+    st_y[c] += AR_ALPHA * (x - st_y[c]);
+    return st_y[c];
+}
+#elif FILTER == FILT_LMS
+static float st_w[NCH][LMS_TAPS];
+static float st_dl[NCH][LMS_TAPS + LMS_DELAY];
+
+static float filtro(int c, float x)
+{
+    float *dl = st_dl[c];
+    for (int i = LMS_TAPS + LMS_DELAY - 1; i > 0; i--) {
+        dl[i] = dl[i - 1];
+    }
+    dl[0] = x;
+
+    float y = 0.0f;
+    float p = 1e-6f;
+    for (int i = 0; i < LMS_TAPS; i++) {
+        float r = dl[i + LMS_DELAY];
+        y += st_w[c][i] * r;
+        p += r * r;
+    }
+    float e = x - y;
+    float g = LMS_MU / p;
+    for (int i = 0; i < LMS_TAPS; i++) {
+        st_w[c][i] += g * e * dl[i + LMS_DELAY];
+    }
+    return y;
+}
+#else
+static float filtro(int c, float x)
+{
+    (void) c;
+    return x;
 }
 #endif
 
@@ -76,7 +117,7 @@ static bool IRAM_ATTR on_timer(gptimer_handle_t timer,
                                const gptimer_alarm_event_data_t *ed,
                                void *arg)
 {
-    gpio_set_level(PIN_SCOPE, 1);
+    gpio_set_level(PIN_TICK, 1);
     s_t_isr = (uint32_t) ed->count_value;
     if (s_pending) {
         s_overruns++;
@@ -88,41 +129,37 @@ static bool IRAM_ATTR on_timer(gptimer_handle_t timer,
     return hp == pdTRUE;
 }
 
-static void reconstruir(int value)
-{
-    if (value < 0) {
-        value = 0;
-    }
-    if (value > 4095) {
-        value = 4095;
-    }
-    uint8_t out8 = value >> 4;
-    dac_oneshot_output_voltage(s_dac, out8);
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, out8);
-    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-}
-
 static void sampling_task(void *arg)
 {
     uint32_t n = 0;
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         s_pending = false;
-
         uint32_t t = s_t_isr;
-        int raw = 0;
-        adc_oneshot_read(s_adc, ADC_CHAN, &raw);
+
+        imu_raw_t m;
+        imu_read(&m);
+        int encv = encoder_read_and_clear();
+
+        float raw[NCH] = {
+            (float) m.ax, (float) m.ay, (float) m.az,
+            (float) m.gx, (float) m.gy, (float) m.gz,
+            (float) encv,
+        };
 
         gpio_set_level(PIN_CALC, 1);
-        float yf = filtro((float) raw);
+        int ym[NCH];
+        for (int c = 0; c < NCH; c++) {
+            ym[c] = (int) lroundf(filtro(c, raw[c]) * 1000.0f);
+        }
         gpio_set_level(PIN_CALC, 0);
+        gpio_set_level(PIN_TICK, 0);
 
-        int y = (int) (yf + (yf >= 0.0f ? 0.5f : -0.5f)) + OUT_BIAS;
-        reconstruir(y);
-        gpio_set_level(PIN_SCOPE, 0);
-
-        printf("%lu,%lu,%d,%d,%lu\n",
-               (unsigned long) n++, (unsigned long) t, raw, y,
+        printf("%lu,%lu,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%lu\n",
+               (unsigned long) n++, (unsigned long) t,
+               (int) raw[0], (int) raw[1], (int) raw[2],
+               (int) raw[3], (int) raw[4], (int) raw[5], (int) raw[6],
+               ym[0], ym[1], ym[2], ym[3], ym[4], ym[5], ym[6],
                (unsigned long) s_overruns);
     }
 }
@@ -130,53 +167,12 @@ static void sampling_task(void *arg)
 static void init_gpio(void)
 {
     gpio_config_t io = {
-        .pin_bit_mask = (1ULL << PIN_SCOPE) | (1ULL << PIN_CALC),
+        .pin_bit_mask = (1ULL << PIN_TICK) | (1ULL << PIN_CALC),
         .mode = GPIO_MODE_OUTPUT,
     };
     gpio_config(&io);
-    gpio_set_level(PIN_SCOPE, 0);
+    gpio_set_level(PIN_TICK, 0);
     gpio_set_level(PIN_CALC, 0);
-}
-
-static void init_adc(void)
-{
-    adc_oneshot_unit_init_cfg_t unit = {
-        .unit_id = ADC_UNIT_1,
-    };
-    adc_oneshot_new_unit(&unit, &s_adc);
-
-    adc_oneshot_chan_cfg_t ch = {
-        .atten = ADC_ATTEN_DB_12,
-        .bitwidth = ADC_BITWIDTH_DEFAULT,
-    };
-    adc_oneshot_config_channel(s_adc, ADC_CHAN, &ch);
-}
-
-static void init_salida(void)
-{
-    dac_oneshot_config_t dcfg = {
-        .chan_id = DAC_CHAN,
-    };
-    dac_oneshot_new_channel(&dcfg, &s_dac);
-
-    ledc_timer_config_t tcfg = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .duty_resolution = LEDC_TIMER_8_BIT,
-        .timer_num = LEDC_TIMER_0,
-        .freq_hz = PWM_FREQ,
-        .clk_cfg = LEDC_AUTO_CLK,
-    };
-    ledc_timer_config(&tcfg);
-
-    ledc_channel_config_t ccfg = {
-        .gpio_num = PIN_PWM,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = LEDC_CHANNEL_0,
-        .timer_sel = LEDC_TIMER_0,
-        .duty = 0,
-        .hpoint = 0,
-    };
-    ledc_channel_config(&ccfg);
 }
 
 static void init_timer(void)
@@ -209,8 +205,8 @@ void app_main(void)
     setvbuf(stdout, NULL, _IOLBF, 0);
 
     init_gpio();
-    init_adc();
-    init_salida();
+    imu_init();
+    encoder_init();
     xTaskCreate(sampling_task, "sampling", 4096, NULL, 10, &s_task);
     init_timer();
 }
