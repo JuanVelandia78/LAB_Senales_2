@@ -20,5 +20,5 @@
 
 #define IMU_SDA 21
 #define IMU_SCL 22
-#define ENC_PIN_A 32
-#define ENC_PIN_B 33
+#define ENC_PIN_A 19
+#define ENC_PIN_B 18

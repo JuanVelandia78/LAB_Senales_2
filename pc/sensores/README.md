@@ -3,7 +3,7 @@
 `fs = 200 muestras/s`. Firmware en `../../main` (la Parte 1 quedó en el commit
 "FILTRADO DE SEÑALES PERIODICAS").
 Sensores: IMU MPU6050 por I2C (GPIO21 SDA / GPIO22 SCL) y encoder en cuadratura
-(GPIO32 / GPIO33). 7 canales: `ax ay az gx gy gz encv` (encv = cuentas del encoder por
+(GPIO19 / GPIO18). 7 canales: `ax ay az gx gy gz encv` (encv = cuentas del encoder por
 muestra ≈ velocidad).
 
 ## Firmware — `../../main/config.h`
@@ -19,7 +19,8 @@ muestra ≈ velocidad).
 
 `filtros_conv.h` lo genera `diseno_conv.py`. Cada canal lleva su propio estado de filtro.
 Solo compila el filtro seleccionado → `idf.py size` mide cada estrategia por separado.
-Pulso de cómputo en GPIO4, pulso de muestreo en GPIO13.
+Pulso de cómputo en GPIO4, pulso de muestreo en GPIO23. Todos los pines usados
+(21, 22, 19, 18, 4, 23) quedan del mismo lado del header en un DevKit ESP32 típico.
 
 Compilar (desde la raíz del proyecto):
 ```bash

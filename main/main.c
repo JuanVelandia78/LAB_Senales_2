@@ -14,7 +14,7 @@
 
 #define FS_HZ    200
 #define TS_US    (1000000 / FS_HZ)
-#define PIN_TICK GPIO_NUM_13
+#define PIN_TICK GPIO_NUM_23
 #define PIN_CALC GPIO_NUM_4
 #define NCH      7
 
