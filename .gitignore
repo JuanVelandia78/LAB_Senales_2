@@ -62,9 +62,6 @@ venv/
 env/
 
 # Capturas y salidas generadas
-pc/capturas/
-pc/salidas/
-pc/*.captura.csv
 pc/sensores/capturas/
 pc/sensores/salidas/
 

@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_attr.h"
+#include "esp_timer.h"
 #include "driver/gptimer.h"
 #include "driver/gpio.h"
 #include "config.h"
@@ -118,7 +119,7 @@ static bool IRAM_ATTR on_timer(gptimer_handle_t timer,
                                void *arg)
 {
     gpio_set_level(PIN_TICK, 1);
-    s_t_isr = (uint32_t) ed->count_value;
+    s_t_isr = (uint32_t) esp_timer_get_time();
     if (s_pending) {
         s_overruns++;
     }

@@ -22,7 +22,7 @@
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
-  "idf.portWin": "detect",
+  "idf.portWin": "COM15",
   "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v5.3.1/",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
@@ -32,5 +32,6 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=c:\\Users\\jdvel\\Documents\\Universidad\\7mo Semestre\\2-Senales\\Laboratorios\\LAB_2\\LAB_Senales_2\\build"
-  ]
+  ],
+  "idf.flashType": "UART"
 }
