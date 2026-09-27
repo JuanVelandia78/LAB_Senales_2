@@ -9,8 +9,8 @@
 #define CONV_FIR 0
 #define CONV_IIR 1
 
-#define FILTER    FILT_NONE
-#define CONV_TYPE CONV_IIR
+#define FILTER    FILT_CONV
+#define CONV_TYPE CONV_FIR
 
 #define MA_WINDOW 8
 #define AR_ALPHA  0.15f

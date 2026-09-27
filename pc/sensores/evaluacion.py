@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from comun import (CH, FS, HERE, SALIDAS, lista_capturas, cargar, psd,
-                   banda_senal, referencia, rms,
+                   banda_senal, referencia, rms, retardo_muestras,
                    fir_causal, iir_causal, media_movil, autorregresivo, lms_ale)
 
 MA_WINDOW = 8
@@ -12,6 +12,16 @@ AR_ALPHA = 0.15
 LMS_TAPS = 16
 LMS_DELAY = 1
 LMS_MU = 0.02
+
+LAG_MAX = 50  # muestras; mas alla de esto la correlacion cruzada no es
+              # confiable (pasa con canales casi planos) y se ignora el ajuste
+
+
+def alinear_referencia(ref, base):
+    lag = retardo_muestras(base, ref)
+    if abs(lag) > LAG_MAX:
+        return ref
+    return np.roll(ref, lag)
 
 
 def cargar_conv():
@@ -32,6 +42,8 @@ def metodos(fir_b, sos):
 def caracterizar(x, y=None):
     ref = referencia(x)
     base = x if y is None else y
+    if y is not None:
+        ref = alinear_referencia(ref, base)
     f, pxx = psd(base)
     f95 = banda_senal(f, pxx)
     senal_amp = rms(referencia(base))
@@ -80,7 +92,7 @@ def main():
                 f2.update(caracterizar(x, y))
                 despues[m].append(f2)
 
-                err = rms(y - ref)
+                err = rms(y - alinear_referencia(ref, y))
                 reduccion.append({
                     "archivo": arch, "canal": c, "metodo": m,
                     "reduccion_dB": round(20 * np.log10(ruido_in / (err + 1e-12)), 2),

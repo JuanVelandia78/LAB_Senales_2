@@ -8,7 +8,7 @@ import pandas as pd
 
 sys.stdout.reconfigure(line_buffering=True, write_through=True)
 
-PORT = "COM15"
+PORT = "COM10"
 BAUD = 921600
 SEGUNDOS = 10.0
 

@@ -22,7 +22,7 @@
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
-  "idf.portWin": "COM15",
+  "idf.portWin": "COM10",
   "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v5.3.1/",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
